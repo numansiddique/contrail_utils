@@ -134,20 +134,27 @@ class ContrailRouteHelper(object):
         self._args = parser.parse_args()
 
     def _execute_curl_cmd(self, cmd, json_data=None, verbose=True):
-        if verbose:
-            print ('Executing curl command : %s' % cmd)
-
         args = cmd.split()
         if json_data:
             json_data = json.JSONEncoder().encode(json_data)
             args.append(json_data)
-        print args
+        if verbose:
+            print '\n'
+            print ('Executing curl command ')
+            if json_data:
+                print ('%s%s' % (cmd, json_data))
+            else:
+                print cmd
+            print '\n'
+
         process = subprocess.Popen(args, shell=False, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         try:
             json_response = json.loads(stdout)
         except:
+            print 'Returned error response from server : ', stdout
+            print stderr
             return None
 
         return json_response
@@ -242,19 +249,19 @@ class ContrailRouteHelper(object):
         print 'Virtual Network details'
         print '********************************'
         for vnet in virtual_nets:
-            print 'Virtual Network uuid : ', vnet['uuid']
-            print 'Virtual Network fq-name : ', vnet['fq_name']
-            print 'Virtual Network tenant id : ', vnet['tenant_id']
+            print 'Virtual Network uuid - ', vnet['uuid']
+            print 'Virtual Network fq-name - ', vnet['fq_name']
+            print 'Virtual Network tenant id - ', vnet['tenant_id']
             print 'Virtual Network Routing instances :'
             for ri in vnet['routing_instances']:
-                print '\t Routing Instance uuid : ', ri['uuid']
-                print '\t Routing Instance fq_name :', ri['fq_name']
+                print '\t Routing Instance uuid - ', ri['uuid']
+                print '\t Routing Instance fq_name - ', ri['fq_name']
                 if ri['route_targets']:
                     print '\t Routing Instance - Route targets :'
                     for rt in ri['route_targets']:
-                        print '\t\tRoute target fq_name :', rt['fq_name']
-                        print '\t\tRoute target uuid :', rt['uuid']
-                        print '\t\tRoute target target :', rt['target']
+                        print '\t\tRoute target fq_name -', rt['fq_name']
+                        print '\t\tRoute target uuid -', rt['uuid']
+                        print '\t\tRoute target -', rt['target']
                         print '\t\t%%%%%%%%%%%%%%%%%%%%%%%%%'
                 else:
                     print '\t No Route targets'
