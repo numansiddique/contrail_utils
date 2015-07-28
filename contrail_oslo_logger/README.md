@@ -17,6 +17,7 @@ OpenContrail supports log configuration in three ways
  the default section of your contrail configuration files
  
  logger_class = contrail_oslo_logger.ContrailOsloLogger
+ 
  logging_conf = /etc/contrail/contrail-oslo-sample.conf
  
  
