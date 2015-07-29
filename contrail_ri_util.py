@@ -1,4 +1,5 @@
 import argparse
+import random
 import subprocess
 import json
 import sys
@@ -44,6 +45,10 @@ class ContrailRouteHelper(object):
                             help="API server port")
         parser.add_argument("-t", "--tenant-id", required=False,
                             help="tenant id")
+        parser.add_argument("-o", "--output-json", required=False,
+                            type=bool,
+                            default=True,
+                            help="Output the curl json response")
 
         subparsers = parser.add_subparsers()
         list_parser = subparsers.add_parser(
@@ -152,6 +157,9 @@ class ContrailRouteHelper(object):
         stdout, stderr = process.communicate()
         try:
             json_response = json.loads(stdout)
+            if verbose and self._args.output_json:
+                print ('Response : ', json_response)
+                print '\n'
         except:
             print 'Returned error response from server : ', stdout
             print stderr
@@ -163,7 +171,11 @@ class ContrailRouteHelper(object):
         ris = []
         for ri in vnet['routing_instances']:
             ri_cmd = ('%s -s %s' % (self.base_curl_cmd, ri['href']))
-            route_instance = self._execute_curl_cmd(ri_cmd)['routing-instance']
+            route_instance = self._execute_curl_cmd(ri_cmd)
+            if not route_instance:
+                continue
+
+            route_instance = route_instance['routing-instance']
             ri_info = {'fq_name': route_instance['fq_name'],
                        'uuid': route_instance['uuid'],
                        'route_targets': []}
@@ -171,6 +183,9 @@ class ContrailRouteHelper(object):
                 rt_cmd = ('%s -s %s' % (self.base_curl_cmd,
                                         rt['href']))
                 route_target = self._execute_curl_cmd(rt_cmd)
+                if not route_target:
+                    continue
+
                 route_target = route_target['route-target']
                 rt_info = {'fq_name': route_target['fq_name'],
                            'uuid': route_target['uuid'],
@@ -192,11 +207,19 @@ class ContrailRouteHelper(object):
                 pass
 
         virtual_nets = self._execute_curl_cmd(vns_cmd)
+        if not virtual_nets:
+            print ('Virtual networks couldnt be retrieved\n')
+            return
+
         total_virtual_nets = []
         for vn in virtual_nets['virtual-networks']:
             # get details about the virtual-network
             vn_cmd = ('%s -s %s' % (self.base_curl_cmd, vn['href']))
-            vnet = self._execute_curl_cmd(vn_cmd)['virtual-network']
+            vnet = self._execute_curl_cmd(vn_cmd)
+            if not vnet:
+                continue
+
+            vnet = vnet['virtual-network']
             tenant_id = vnet['parent_uuid'].replace("-", "")
             if self._args.tenant_id and self._args.tenant_id != tenant_id:
                 continue
@@ -285,11 +308,15 @@ class ContrailRouteHelper(object):
         vn_cmd = ('%s -s http://%s:%s/virtual-network/%s'
                   % (self.base_curl_cmd, self._args.api_server,
                      self._args.api_port, net_id))
-        vnet = self._execute_curl_cmd(vn_cmd)['virtual-network']
+        vnet = self._execute_curl_cmd(vn_cmd)
+        if vnet:
+            vnet = vnet['virtual-network']
         return vnet
 
     def _generate_rt_key(self, other_key):
-        target_key = int(other_key[2]) + 10000
+        random_no = random.getrandbits(16)
+        random_no = int(random_no)
+        target_key = int(other_key[2]) + 10000 + random_no
         return 'target:%s:%d' % (other_key[1], target_key)
 
     def _read_or_create_route_target(self, rt_key):
@@ -303,7 +330,11 @@ class ContrailRouteHelper(object):
         cmd = ('%s -X POST %s/route-targets -H '
                'Content-Type:application/json -d '
                % (self.base_curl_cmd, self.base_url))
-        rt_target = self._execute_curl_cmd(cmd, json_data=data)['route-target']
+        rt_target = self._execute_curl_cmd(cmd, json_data=data)
+        if not rt_target:
+            print('Creating route target failed : cmd = ' + str(cmd) + '\n')
+            sys.exit(1)
+        rt_target = rt_target['route-target']
         return rt_target
 
     def _delete_route_target(self, rt_uuid=None, rt_key=None):
@@ -356,6 +387,10 @@ class ContrailRouteHelper(object):
                'Content-Type:application/json -d '
                % (self.base_curl_cmd, self.base_url))
         rt_target = self._execute_curl_cmd(cmd, json_data=data)
+        if not rt_target:
+            print ('Creating routing instance failed : fq_name = '
+                   + str(ri_fq_name) + '\n')
+            return None
         return rt_target['routing-instance']
 
     def _update_routing_instance(self, ri_uuid, rt_uuid, rt_fq_name, action):
@@ -407,7 +442,7 @@ class ContrailRouteHelper(object):
             existing_key = (
                 left_net['routing_instances'][0]['route_targets'][0]['target'])
             existing_key = existing_key.split(':')
-            rt_key = self._generate_rt_key(existing_key)
+            rt_key = [self._generate_rt_key(existing_key)]
 
         # create a route target
         rt_target = self._read_or_create_route_target(rt_key)
