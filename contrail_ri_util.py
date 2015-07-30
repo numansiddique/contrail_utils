@@ -54,6 +54,14 @@ class ContrailRouteHelper(object):
         list_parser = subparsers.add_parser(
             'list', help='list all the virtual networks with '
             'routing instance information')
+        list_parser.add_argument(
+            '--target', required=False,
+            help='Filter the list based on the route target')
+
+        list_parser.add_argument(
+            '--routing-instance', required=False,
+            help='Filter the list based on the route instance uuid/fqname')
+
         list_parser.set_defaults(func=self.list_virtual_networks)
 
         show_parser = subparsers.add_parser('show')
@@ -194,7 +202,82 @@ class ContrailRouteHelper(object):
             ris.append(ri_info)
         return ris
 
+    def _get_route_target_vns(self, target):
+        if target.find('target') == 0:
+            rt_key = [target]
+        else:
+            rt_key = ['target:%s' % (target)]
+
+        rt_target = self._get_route_target(rt_key)
+        if not rt_target:
+            print('Route target : %s NOT FOUND ' % (target))
+            sys.exit(1)
+
+        vns = []
+        rt_info = {'fq_name': rt_target['fq_name'],
+                   'uuid': rt_target['uuid'],
+                   'target': rt_target['name']}
+        for ri in rt_target['routing_instance_back_refs']:
+            ri_cmd = ('%s -s %s' % (self.base_curl_cmd, ri['href']))
+            route_instance = self._execute_curl_cmd(ri_cmd)
+            if not route_instance:
+                continue
+            route_instance = route_instance['routing-instance']
+            ri_info = {'fq_name': route_instance['fq_name'],
+                       'uuid': route_instance['uuid'],
+                       'route_targets': [rt_info]}
+            vn_cmd = ('%s -s %s' % (self.base_curl_cmd,
+                                    route_instance['parent_href']))
+            vnet = self._execute_curl_cmd(vn_cmd)
+            if not vnet:
+                continue
+            vnet = vnet['virtual-network']
+            tenant_id = vnet['parent_uuid'].replace("-", "")
+            vnet_info = {'uuid': vnet['uuid'],
+                         'fq_name': vnet['fq_name'],
+                         'tenant_id': tenant_id}
+            subnets = self._get_vnet_subnets(vnet)
+            vnet_info['subnets'] = subnets
+            vnet_info['routing_instances'] = [ri_info]
+            vns.append(vnet_info)
+
+        self._print_virtual_networks(vns)
+
+    def _get_vnet_subnets(self, vnet):
+        subnets = []
+        for ipam_refs in vnet.get('network_ipam_refs', []):
+            attr = ipam_refs['attr']
+            for ipam_subnet in attr['ipam_subnets']:
+                subnet_info = {
+                    'subnet_uuid': ipam_subnet['subnet_uuid'],
+                    'cidr': '%s/%s' % (ipam_subnet['subnet']['ip_prefix'],
+                                       ipam_subnet['subnet']['ip_prefix_len'])}
+                subnets.append(subnet_info)
+        return subnets
+
+    def _get_routing_instance_vns(self, ri_name):
+        try:
+            ri_uuid = uuid.UUID(ri_name)
+            fq_name = None
+        except:
+            ri_uuid = None
+            fq_name = ri_name
+
+        route_instance = self._get_routing_instance(ri_uuid=ri_uuid,
+                                                    fq_name=fq_name)
+
+        self._args.network_id = route_instance['parent_uuid']
+        self.show_virtual_network()
+
     def list_virtual_networks(self):
+        if self._args.target:
+            self._get_route_target_vns(self._args.target)
+            return
+
+        if self._args.routing_instance:
+            self._get_routing_instance_vns(self._args.routing_instance)
+            return
+
         vns_cmd = ('%s -s http://%s:%s/virtual-networks'
                    % (self.base_curl_cmd, self._args.api_server,
                       self._args.api_port))
@@ -227,6 +310,8 @@ class ContrailRouteHelper(object):
             vnet_info = {'uuid': vnet['uuid'],
                          'fq_name': vnet['fq_name'],
                          'tenant_id': tenant_id}
+            subnets = self._get_vnet_subnets(vnet)
+            vnet_info['subnets'] = subnets
             routing_instances = self._extract_routing_instances(vnet)
             vnet_info['routing_instances'] = routing_instances
             total_virtual_nets.append(vnet_info)
@@ -275,6 +360,10 @@ class ContrailRouteHelper(object):
             print 'Virtual Network uuid - ', vnet['uuid']
             print 'Virtual Network fq-name - ', vnet['fq_name']
             print 'Virtual Network tenant id - ', vnet['tenant_id']
+            print 'Virtual Network subnets :'
+            for subnet in vnet.get('subnets', []):
+                print '\t Subnet uuid - ', subnet['subnet_uuid']
+                print '\t Subnet cidr - ', subnet['cidr']
             print 'Virtual Network Routing instances :'
             for ri in vnet['routing_instances']:
                 print '\t Routing Instance uuid - ', ri['uuid']
