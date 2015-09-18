@@ -199,10 +199,16 @@ class ContrailRouteHelper(object):
                 if not route_target:
                     continue
 
+                try:
+                    direction = rt['attr']['import_export']
+                except:
+                    direction = None
+
                 route_target = route_target['route-target']
                 rt_info = {'fq_name': route_target['fq_name'],
                            'uuid': route_target['uuid'],
-                           'target': route_target['name']}
+                           'target': route_target['name'],
+                           'direction': direction}
                 ri_info['route_targets'].append(rt_info)
             ris.append(ri_info)
         return ris
@@ -379,6 +385,7 @@ class ContrailRouteHelper(object):
                         print '\t\tRoute target fq_name -', rt['fq_name']
                         print '\t\tRoute target uuid -', rt['uuid']
                         print '\t\tRoute target -', rt['target']
+                        print '\t\tRoute target direction - ', rt['direction']
                         print '\t\t%%%%%%%%%%%%%%%%%%%%%%%%%'
                 else:
                     print '\t No Route targets'
