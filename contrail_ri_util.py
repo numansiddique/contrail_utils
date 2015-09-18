@@ -3,6 +3,7 @@ import random
 import subprocess
 import json
 import sys
+import time
 import uuid
 
 
@@ -123,6 +124,10 @@ class ContrailRouteHelper(object):
             '--routing-instance',
             required=False,
             help='Routing instance name')
+        add_route_target.add_argument(
+            '--direction',
+            required=False,
+            help='direction - import or export')
         add_route_target.add_argument(
             '--network',
             help='network id or network fq_name of the virtual network')
@@ -482,14 +487,15 @@ class ContrailRouteHelper(object):
             return None
         return rt_target['routing-instance']
 
-    def _update_routing_instance(self, ri_uuid, rt_uuid, rt_fq_name, action):
+    def _update_routing_instance(self, ri_uuid, rt_uuid, rt_fq_name, action,
+                                 direction=None):
         json_data = {"ref-type": "route-target",
                      "uuid": ri_uuid,
                      "ref-fq-name": rt_fq_name,
                      "ref-uuid": rt_uuid,
                      "operation": action,
                      "type": "routing-instance",
-                     "attr": {"import_export": None}}
+                     "attr": {"import_export": direction}}
 
         cmd = ('%s -X POST %s/ref-update -H Content-Type:application/json '
                ' -d ' % (self.base_curl_cmd, self.base_url))
@@ -597,27 +603,44 @@ class ContrailRouteHelper(object):
                                               verbose=False)
         self._print_virtual_networks([left_net, right_net])
 
-    def _vn_route_target_update(self, action):
+    def _vn_route_target_update(self, action, direction=None):
         vn = self._get_virtual_network(self._args.network)
         rt_key = ['target:%s' % (self._args.target)]
         rt_target = self._get_route_target(rt_key)
         if not rt_target:
-            print ('Route target : %s not found. Exiting..'
-                   % self._args.target)
-            sys.exit()
+            if direction == 'DELETE':
+                print ('Route target : %s not found. Exiting..'
+                       % self._args.target)
+                sys.exit()
+            else:
+                print ('Route target : %s not found. Creating it..'
+                       % self._args.target)
+            rt_target = self._create_route_target(rt_key)
+
         ri = self._get_primary_routing_instance(vn)
         self._update_routing_instance(ri['uuid'], rt_target['uuid'],
-                                      rt_target['fq_name'], action)
+                                      rt_target['fq_name'], action,
+                                      direction)
 
         print ('%sED route target %s network [%s]'
                % (action, 'to' if action == 'ADD' else 'from',
                   self._args.network))
         print ('\n')
+
+        if action == 'DELETE':
+            time.sleep(3)
+            print ('Trying to delete the route target %s' % (rt_key))
+            self._delete_route_target(rt_uuid=rt_target['uuid'])
+
         vn = self._get_virtual_network(self._args.network)
         self._print_virtual_networks([vn])
 
     def add_route_target(self):
-        self._vn_route_target_update('ADD')
+        direction = self._args.direction
+        if direction and (direction != 'import' and direction != 'export'):
+            print 'Invalid direction value. Can be import or export only'
+            sys.exit()
+        self._vn_route_target_update('ADD', direction=direction)
 
     def remove_route_target(self):
         self._vn_route_target_update('DELETE')
